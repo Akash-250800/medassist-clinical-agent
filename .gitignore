@@ -1,0 +1,31 @@
+# Virtual environment
+venv/
+medassist_env/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables (NEVER push this!)
+.env
+
+# FAISS index (too large, rebuilt on deploy)
+data/faiss_index/
+
+# Trained models (too large for GitHub)
+models/
+
+# Logs and temp
+*.log
+*.tmp
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
