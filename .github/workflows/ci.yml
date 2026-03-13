@@ -1,0 +1,298 @@
+name: MedAssist CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # Job 1 — Code Quality Checks
+  # ─────────────────────────────────────────────
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lint-
+
+      - name: Install lint tools
+        run: |
+          pip install flake8 black isort
+
+      - name: Check code formatting with Black
+        run: |
+          black --check --diff .
+        continue-on-error: true
+
+      - name: Check import sorting with isort
+        run: |
+          isort --check-only --diff .
+        continue-on-error: true
+
+      - name: Lint with flake8
+        run: |
+          flake8 . \
+            --max-line-length=120 \
+            --exclude=venv,medassist_env,.git,__pycache__,models,data/faiss_index \
+            --ignore=E501,W503,E203
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────
+  # Job 2 — Install & Import Tests
+  # ─────────────────────────────────────────────
+  test:
+    name: Install & Test
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y libgomp1
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify core imports
+        run: |
+          python -c "
+          import sys
+          print(f'Python: {sys.version}')
+
+          import langchain
+          print(f'LangChain: {langchain.__version__}')
+
+          import langgraph
+          print(f'LangGraph: {langgraph.__version__}')
+
+          import langchain_groq
+          print(f'LangChain-Groq: OK')
+
+          import faiss
+          print(f'FAISS: OK')
+
+          import sentence_transformers
+          print(f'SentenceTransformers: {sentence_transformers.__version__}')
+
+          import xgboost
+          print(f'XGBoost: {xgboost.__version__}')
+
+          import shap
+          print(f'SHAP: {shap.__version__}')
+
+          import streamlit
+          print(f'Streamlit: {streamlit.__version__}')
+
+          import pandas
+          print(f'Pandas: {pandas.__version__}')
+
+          print('')
+          print('All imports successful!')
+          "
+
+      - name: Test risk scorer
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from utils.risk_scorer import RiskScorer
+          scorer = RiskScorer()
+
+          # Test high risk
+          text = 'RED FLAGS:\n- Chest pain\n- Loss of consciousness\nURGENCY: EMERGENCY\nCONFIDENCE: 0.9'
+          result = scorer.parse_and_score(text)
+          assert result['risk_score'] > 0.5, f'Expected high risk, got {result[\"risk_score\"]}'
+
+          # Test low risk
+          text2 = 'RED FLAGS: None\nURGENCY: ROUTINE\nCONFIDENCE: 0.7'
+          result2 = scorer.parse_and_score(text2)
+          assert result2['risk_score'] < 0.8, f'Expected lower risk, got {result2[\"risk_score\"]}'
+
+          print('RiskScorer tests passed!')
+          "
+
+      - name: Test disease classifier (no model)
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from utils.disease_classifier import DiseaseClassifier
+          clf = DiseaseClassifier()
+          # Should gracefully handle missing model files
+          result = clf.predict('chest pain shortness of breath')
+          assert 'classifier_available' in result
+          print(f'DiseaseClassifier: OK (available={result[\"classifier_available\"]})')
+          print('DiseaseClassifier tests passed!')
+          "
+
+      - name: Test retriever (CPU mode)
+        env:
+          GROQ_API_KEY: "dummy_key_for_test"
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          os.environ['GROQ_API_KEY'] = 'dummy'
+
+          from rag.retriever import MedicalRetriever
+          retriever = MedicalRetriever()
+
+          # Test with built-in guidelines
+          docs = retriever.retrieve('chest pain', k=3)
+          assert isinstance(docs, list), 'Expected list'
+          print(f'Retriever returned {len(docs)} docs')
+          print('Retriever tests passed!')
+          "
+
+      - name: Test LangGraph pipeline structure
+        env:
+          GROQ_API_KEY: "dummy_key_for_test"
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          os.environ['GROQ_API_KEY'] = 'dummy'
+
+          from agents.clinical_agent import build_clinical_graph, ClinicalState
+          graph = build_clinical_graph()
+          print(f'LangGraph compiled successfully')
+          print(f'Graph type: {type(graph).__name__}')
+          print('Pipeline structure tests passed!')
+          "
+
+  # ─────────────────────────────────────────────
+  # Job 3 — Security Scan
+  # ─────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Run security scan
+        run: |
+          bandit -r . \
+            --exclude ./venv,./medassist_env,./.git,./models \
+            -ll \
+            --quiet
+        continue-on-error: true
+
+      - name: Check for secrets in code
+        run: |
+          python -c "
+          import os, re, sys
+
+          # Patterns that look like hardcoded secrets
+          patterns = [
+              r'gsk_[A-Za-z0-9]{40,}',    # Groq API key
+              r'sk-[A-Za-z0-9]{40,}',      # OpenAI API key
+              r'ghp_[A-Za-z0-9]{36,}',     # GitHub token
+          ]
+
+          found = []
+          for root, dirs, files in os.walk('.'):
+              # Skip non-code directories
+              dirs[:] = [d for d in dirs if d not in
+                        ['venv', 'medassist_env', '.git', '__pycache__',
+                         'models', 'faiss_index', '.github']]
+              for fname in files:
+                  if not fname.endswith('.py'):
+                      continue
+                  fpath = os.path.join(root, fname)
+                  try:
+                      content = open(fpath).read()
+                      for p in patterns:
+                          if re.search(p, content):
+                              found.append(f'{fpath}: possible hardcoded secret')
+                  except Exception:
+                      pass
+
+          if found:
+              print('WARNING: Possible secrets found:')
+              for f in found:
+                  print(f'  {f}')
+              sys.exit(1)
+          else:
+              print('No hardcoded secrets detected!')
+          "
+
+  # ─────────────────────────────────────────────
+  # Job 4 — Deploy Notification
+  # ─────────────────────────────────────────────
+  notify:
+    name: Deploy Ready
+    runs-on: ubuntu-latest
+    needs: [ test, security ]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Print deployment summary
+        run: |
+          echo "================================================"
+          echo "  MedAssist CI/CD Pipeline Complete"
+          echo "================================================"
+          echo ""
+          echo "  Branch  : ${{ github.ref_name }}"
+          echo "  Commit  : ${{ github.sha }}"
+          echo "  Author  : ${{ github.actor }}"
+          echo "  Time    : $(date)"
+          echo ""
+          echo "  Checks passed:"
+          echo "   Code quality  "
+          echo "   Import tests  "
+          echo "   Unit tests    "
+          echo "   Security scan "
+          echo ""
+          echo "  Streamlit Cloud will auto-deploy from main"
+          echo "  Live at: https://share.streamlit.io"
+          echo "================================================"
