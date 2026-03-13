@@ -1,44 +1,42 @@
-# ─── Groq (FREE LLM API) ───
+# Groq
 groq>=0.11.0
 langchain-groq>=0.2.0
 
-# ─── Core LangChain & LangGraph ───
+# LangChain + LangGraph
 langchain>=0.3.19
 langchain-core>=0.3.41
 langchain-community>=0.3.19
 langgraph>=0.2.74
+langchain-text-splitters>=0.3.0
 
-# ─── Vector Store ───
+# Vector Store
 faiss-cpu>=1.9.0
 
-# ─── Embeddings (FREE — GTX 1650 GPU) ───
+# Embeddings (CPU on cloud)
 sentence-transformers>=3.3.1
 huggingface-hub>=0.27.1
 transformers>=4.47.1
 tokenizers>=0.21.0
 
-# ─── Document Loading ───
+# Document Loading
 pypdf>=5.1.0
-python-magic-bin>=0.4.14
 
-# ─── Data Processing (for Kaggle CSV) ───
+# Data Processing
 pandas>=2.2.3
 numpy>=1.26.4
 
-# ─── Streamlit UI ───
-streamlit>=1.41.1
-
-# ─── Environment & Config ───
-python-dotenv>=1.0.1
-pydantic>=2.10.4
-
-# ─── Utilities ───
-tenacity>=9.0.0
-requests>=2.32.3
-httpx>=0.28.1
-
-# ─── ML Classifier (NEW) ───
+# ML Classifier
 xgboost>=2.0.0
 scikit-learn>=1.4.0
 shap>=0.44.0
 matplotlib>=3.8.0
+
+# Streamlit
+streamlit>=1.41.1
+
+# Utils
+python-dotenv>=1.0.1
+pydantic>=2.10.4
+tenacity>=9.0.0
+requests>=2.32.3
+httpx>=0.28.1
